@@ -8,6 +8,34 @@ class EventType(object):
         self.name = name
         self.fields = fields
 
+def postProcessHitboxEvent(fields):
+    # size, x, y, z are fixed point floats
+    fields["size"] /= 255
+    fields["x"] /= 255
+    fields["y"] /= 255
+    fields["z"] /= 255
+
+    elementMap = {
+        0x00: "normal",
+        0x04: "fire",
+        0x08: "electric",
+        0x0C: "slash",
+        0x10: "coin",
+        0x14: "ice",
+        0x18: "sleep",
+        0x1C: "sleep",
+        0x20: "grounded",
+        0x24: "grounded",
+        0x28: "cape",
+        0x2C: "empty", # gray hitbox that doesn't hit
+        0x30: "disabled",
+        0x34: "darkness",
+        0x38: "screw_attack",
+        0x3C: "poison/flower",
+        0x40: "nothing", # no graphic on hit
+    }
+    fields["element"] = elementMap.get(fields["element"], fields["element"])
+
 # mostly from here: https://github.com/Adjective-Object/melee_subaction_unpacker/blob/1489f016240440d76c2a0e6bf94dfc71ea816c5d/melee.langdef
 # some info from here too: http://opensa.dantarion.com/wiki/Events_(Melee)
 # and a lot from mer in the Melee Workshop Discord
@@ -32,20 +60,25 @@ eventTypes = {
     # https://smashboards.com/threads/melee-hacks-and-you-new-hackers-start-here-in-the-op.247119/page-48#post-10769744
     0x2C: EventType(0x14, "hitbox", ("u3p5u7p2u9 u16s16s16s16 u9u9u9p3u2u9 u5p1u7u8b1b1", [
         "id",
-        "bone",
+        "bone", # zero is character root position
         "damage",
+
         "size",
         "z", "y", "x",
+
         "angle",
         "kb_growth",
         "weight_dep_kb",
+        # https://smashboards.com/threads/official-ask-anyone-frame-things-thread.313889/page-16#post-17742200
         "hitbox_interaction",
         "base_kb",
+
         "element",
         "shield_damage",
         "sfx",
-        "hurtbox_interaction",
-        ])),
+        "hit_grounded",
+        "hit_airborne",
+        ], postProcessHitboxEvent)),
 
     0x30: EventType(0x04, "adjust_hitbox_damage", ("u3u23", ["hitbox_id", "damage"])),
     0x34: EventType(0x04, "adjust_hitbox_size", ("u3u23", ["hitbox_id", "size"])),
@@ -75,7 +108,18 @@ eventTypes = {
 
     0x80: EventType(0x04, "revert_models"),
     0x84: EventType(0x04, "remove_models"),
-    0x88: EventType(0x0C, "throw"), # melee_subaction_unpacker says length 0x10
+
+    # https://smashboards.com/threads/melee-hacks-and-you-new-hackers-start-here-in-the-op.247119/page-49#post-10804377
+    0x88: EventType(0x0C, "throw", ("u3p14 u9u9u9u7 p5u9u4 p3p4", [
+        "throw_type", # first throw command has a 0 here with all knockback data, second has a 1, which is needed for throw release
+        "damage",
+        "angle",
+        "kb_growth",
+        "weight_dep_kb",
+        "base_kb",
+        "element",
+    ])),
+
     0x8C: EventType(0x04, "held_item_invisibility", ("p25b1", ["flag"])),
 
     0x90: EventType(0x04, "body_article_invisibility", ("p25b1", ["flag"])),
@@ -117,12 +161,19 @@ class Event(object):
         self.bytes = eventStr[:self.length]
 
         if eventType.fields:
-            fieldFormat, fieldNames = eventType.fields
+            if len(eventType.fields) > 2:
+                fieldFormat, fieldNames, postProcess = eventType.fields
+            else:
+                fieldFormat, fieldNames = eventType.fields
+                postProcess = None
             # p6 to skip command id
             values = bitstruct.unpack("p6" + fieldFormat.replace(" ", ""), eventStr)
             assert len(values) == len(fieldNames), "format: {}, fields: {}, values: {}".format("p6" + fieldFormat, fieldNames, values)
             for i in range(len(fieldNames)):
                 self.fields[fieldNames[i]] = values[i]
+
+            if postProcess:
+                postProcess(self.fields)
 
     def __str__(self):
         if self.name:

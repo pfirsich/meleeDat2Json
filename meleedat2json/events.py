@@ -23,13 +23,14 @@ eventTypes = {
     0x1C: EventType(0x08, "subroutine", ("p26u32", ["location"])),
     0x20: EventType(0x04, "set_timer_looping_animation?"),
 
-    0x28: EventType(0x14, "graphic_common", ("p26u16p16s16s16s16s16s16s16", [
+    0x28: EventType(0x14, "graphic_common", ("p26u16 p16s16s16s16 s16s16s16", [
         "id",
         "z", "y", "x",
         "z_range", "y_range", "x_range",
         ])),
 
-    0x2C: EventType(0x14, "hitbox", ("u3p5u7p2u9u16s16s16s16u9u9u9p3u2u9u5p1u7u8u2", [
+    # https://smashboards.com/threads/melee-hacks-and-you-new-hackers-start-here-in-the-op.247119/page-48#post-10769744
+    0x2C: EventType(0x14, "hitbox", ("u3p5u7p2u9 u16s16s16s16 u9u9u9p3u2u9 u5p1u7u8b1b1", [
         "id",
         "bone",
         "damage",
@@ -118,7 +119,7 @@ class Event(object):
         if eventType.fields:
             fieldFormat, fieldNames = eventType.fields
             # p6 to skip command id
-            values = bitstruct.unpack("p6" + fieldFormat, eventStr)
+            values = bitstruct.unpack("p6" + fieldFormat.replace(" ", ""), eventStr)
             assert len(values) == len(fieldNames), "format: {}, fields: {}, values: {}".format("p6" + fieldFormat, fieldNames, values)
             for i in range(len(fieldNames)):
                 self.fields[fieldNames[i]] = values[i]

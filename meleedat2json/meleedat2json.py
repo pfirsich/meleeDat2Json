@@ -87,6 +87,21 @@ class FtData(object):
             subaction = FtDataSubaction(subactionHeaderData, datFile)
             self.subactions.append(subaction)
 
+class FigaTreeHeader(object):
+    def __init__(self, data):
+        values = struct.unpack(">2If2I", data)
+        assert values[0] == 1
+        assert values[1] == 0
+        self.numFrames = values[2]
+        self.boneTableOffset = values[3]
+        self.animDataOffset = values[4]
+
+# https://smashboards.com/threads/melee-dat-format.292603/page-6#post-20386112
+# https://smashboards.com/threads/melee-animation-model-workshop.433432/
+class FigaTree(object):
+    def __init__(self, data, datFile):
+        self.header = FigaTreeHeader(data)
+
 class RootNode(object):
     def __init__(self, data, datFile):
         values = struct.unpack(">2I", data[:0x08])
@@ -96,9 +111,13 @@ class RootNode(object):
         self.data = None
 
         if self.name.startswith(b"ftData"):
+            # character data
             self.data = FtData(datFile.dataSlice(self.rootOffset, 0x60), datFile)
+        elif self.name.endswith(b"_figatree"):
+            # animation file
+            self.data = FigaTree(datFile.dataSlice(self.rootOffset, 0x14), datFile)
         else:
-            print("Warning! Unkown/Unimplemented data type:", self.name)
+            print("Warning! Unkown/Unimplemented node type:", self.name)
 
     def __str__(self):
         return "RootNode<rootOffset: {}, stringTableOffset: {}, name: {}>".format(self.rootOffset, self.stringTableOffset, self.name)
@@ -151,6 +170,7 @@ def main():
     file_json = {"nodes": []}
     for node in file.rootNodes:
         node_json = {
+            "rootOffset": node.rootOffset,
             "name": node.name.decode("utf-8")
         }
         if isinstance(node.data, FtData):
@@ -162,6 +182,8 @@ def main():
                 print(i, subaction.name)
                 subaction_json = {
                     "name": subaction.name.decode("utf-8"),
+                    "animOffset": subaction.animationOffset,
+                    "animSize": subaction.animationSize,
                     "events": []
                 }
 
@@ -178,7 +200,17 @@ def main():
                     subaction_json["events"].append(event_json)
 
                 subactions_json.append(subaction_json)
-            node_json["data"] = {"attributes": attributes_json, "subactions": subactions_json}
+            node_json["data"] = {
+                "attributes": attributes_json,
+                "subactions": subactions_json
+            }
+        elif isinstance(node.data, FigaTree):
+            node_json["data"] = {
+                "numFrames": node.data.header.numFrames,
+                "boneTableOffset": node.data.header.boneTableOffset,
+                "animDataOffset": node.data.header.animDataOffset,
+            }
+
         file_json["nodes"].append(node_json)
 
     with open(sys.argv[2], "w") as f:

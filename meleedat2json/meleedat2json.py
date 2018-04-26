@@ -158,7 +158,8 @@ def main():
             attributes_json = []
 
             subactions_json = []
-            for subaction in node.data.subactions:
+            for i, subaction in enumerate(node.data.subactions):
+                print(i, subaction.name)
                 subaction_json = {
                     "name": subaction.name.decode("utf-8"),
                     "events": []

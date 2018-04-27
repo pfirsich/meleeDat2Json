@@ -1,7 +1,10 @@
+import argparse
+from collections import OrderedDict as odict
+import json
+import os
+import re
 import sys
 import struct
-import json
-from collections import OrderedDict as odict
 
 # Sources:
 # https://smashboards.com/threads/melee-dat-format.292603/
@@ -9,6 +12,7 @@ from collections import OrderedDict as odict
 # https://github.com/Adjective-Object/melee_subaction_unpacker
 
 from .events import parseEvents
+from .attributes import attributesList
 
 class FileHeader(object):
     def __init__(self, header):
@@ -40,16 +44,12 @@ class FtDataHeader(object):
         return "FtDataHeader<attributesOffset: {}, attributesEnd: {}, subactionsOffset: {}, subactionsEnd: {}, unknown1: {}, unknown2: {}>".format(
             self.attributesOffset, self.attributesEnd, self.subactionsOffset, self.subactionsEnd, self.unknown1, self.unknown2)
 
-class FtDataAttributes(object):
-    def __init__(self, data):
-        pass
-        # TODO: put this into variables later:
-        # https://github.com/Adjective-Object/melee_subaction_unpacker/blob/master/src/dolfs/ftdata.hpp#L55
-        # http://opensa.dantarion.com/wiki/Attributes_(Melee)
-        # maybe look up if by now more is known about the unknown values
-
-    def __str__(self):
-        return "FtDataAttributes<>"
+def figatreeShortname(name):
+    m = re.match(b".*ACTION_(.*?)_figatree", name)
+    if m:
+        return m.group(1)
+    else:
+        return name
 
 class FtDataSubaction(object):
     def __init__(self, data, datFile):
@@ -63,9 +63,15 @@ class FtDataSubaction(object):
         # last 4 bytes are always 00000000; game inserts pointer here to animation in ARAM
 
         self.name = datFile.getDataString(self.nameOffset)
-        self.eventsData = datFile.dataSlice(self.eventsOffset)
+        self.shortName = figatreeShortname(self.name)
 
+        self.eventsData = datFile.dataSlice(self.eventsOffset)
         self.events = parseEvents(self.eventsData)
+
+        if datFile.animFileData and self.animationSize > 0:
+            self.animation = DatFile(datFile.animFileData[self.animationOffset:self.animationOffset+self.animationSize])
+        else:
+            self.animation = None
 
     def __str__(self):
         return "Subaction<nameOffset: {}, eventsOffset: {}, name: {}>".format(
@@ -74,10 +80,22 @@ class FtDataSubaction(object):
 class FtData(object):
     def __init__(self, data, datFile):
         self.header = FtDataHeader(data)
-        self.attributeData = datFile.data[self.header.attributesOffset:self.header.attributesEnd]
-        self.attributes = FtDataAttributes(self.attributeData)
-        self.subactionData = datFile.data[self.header.subactionsOffset:self.header.subactionsEnd]
 
+        # load attributes
+        self.attributeData = datFile.data[self.header.attributesOffset:self.header.attributesEnd]
+        fmt = ">"
+        for attr in attributesList:
+            fmt += attr[0]
+        values = struct.unpack(fmt, self.attributeData)
+
+        self.attributes = odict()
+        for i, attr in enumerate(attributesList):
+            name = attr[1]
+            if name != "?":
+                self.attributes[name] = values[i]
+
+        # load subactions
+        self.subactionData = datFile.data[self.header.subactionsOffset:self.header.subactionsEnd]
         subactionCount = len(self.subactionData) // 24
         assert subactionCount * 24 == len(self.subactionData)
         self.subactions = []
@@ -116,6 +134,7 @@ class RootNode(object):
         elif self.name.endswith(b"_figatree"):
             # animation file
             self.data = FigaTree(datFile.dataSlice(self.rootOffset, 0x14), datFile)
+            self.shortName = figatreeShortname(self.name)
         else:
             print("Warning! Unkown/Unimplemented node type:", self.name)
 
@@ -123,7 +142,7 @@ class RootNode(object):
         return "RootNode<rootOffset: {}, stringTableOffset: {}, name: {}>".format(self.rootOffset, self.stringTableOffset, self.name)
 
 class DatFile(object):
-    def __init__(self, fileData):
+    def __init__(self, fileData, animFileData=None):
         self.header = FileHeader(fileData[:0x20])
         self.dataBlockOffset = 0x20
         self.relocationTableOffset = self.dataBlockOffset + self.header.dataBlockSize
@@ -134,6 +153,7 @@ class DatFile(object):
         self.stringTableData = fileData[self.stringTableOffset:]
 
         self.data = fileData[self.dataBlockOffset:self.dataBlockOffset + self.header.dataBlockSize]
+        self.animFileData = animFileData
 
         # load relocation table
         self.relocationTableData = fileData[self.relocationTableOffset:self.relocationTableOffset + self.relocationTableSize]
@@ -160,61 +180,107 @@ class DatFile(object):
         else:
             return self.data[offset:offset+length]
 
-def main():
-    with open(sys.argv[1], "rb") as f:
-        fileData = f.read()
+    def toJsonDict(self):
+        file_json = odict()
+        file_json["nodes"] = []
+        for node in self.rootNodes:
+            node_json = odict([
+                ("name", node.name.decode("utf-8")),
+                ("rootOffset", node.rootOffset)
+            ])
+            if isinstance(node.data, FtData):
+                subactions_json = []
+                for i, subaction in enumerate(node.data.subactions):
+                    subaction_json = odict([
+                        ("shortName", subaction.shortName.decode("utf-8")),
+                        ("name", subaction.name.decode("utf-8")),
+                        ("animOffset", subaction.animationOffset),
+                        ("animSize", subaction.animationSize),
+                    ])
 
-    file = DatFile(fileData)
+                    if subaction.animation:
+                        if not "animationFiles" in file_json:
+                            file_json["animationFiles"] = []
+                        subaction_json["animationFile"] = len(file_json["animationFiles"])
+                        file_json["animationFiles"].append(subaction.animation.toJsonDict())
 
-    # Save to JSON
-    file_json = {"nodes": []}
-    for node in file.rootNodes:
-        node_json = {
-            "rootOffset": node.rootOffset,
-            "name": node.name.decode("utf-8")
-        }
-        if isinstance(node.data, FtData):
-            # TODO: save attributes
-            attributes_json = []
+                    subaction_json["events"] = []
+                    for event in subaction.events:
+                        event_json = odict()
+                        event_json["commandId"] = hex(event.commandId)
+                        if event.name:
+                            event_json["name"] = event.name
+                        event_json["length"] = event.length
+                        event_json["bytes"] = " ".join("{:02x}".format(byte) for byte in event.bytes)
+                        if len(event.fields) > 0:
+                            event_json["fields"] = event.fields
 
-            subactions_json = []
-            for i, subaction in enumerate(node.data.subactions):
-                print(i, subaction.name)
-                subaction_json = {
-                    "name": subaction.name.decode("utf-8"),
-                    "animOffset": subaction.animationOffset,
-                    "animSize": subaction.animationSize,
-                    "events": []
+                        subaction_json["events"].append(event_json)
+
+                    subactions_json.append(subaction_json)
+                node_json["data"] = odict([
+                    ("attributes", node.data.attributes),
+                    ("subactions", subactions_json)
+                ])
+            elif isinstance(node.data, FigaTree):
+                node_json["shortName"] = node.shortName.decode("utf-8")
+                node_json.move_to_end("shortName", last=False)
+                node_json["data"] = {
+                    "numFrames": node.data.header.numFrames,
+                    "boneTableOffset": node.data.header.boneTableOffset,
+                    "animDataOffset": node.data.header.animDataOffset,
                 }
 
-                for event in subaction.events:
-                    event_json = odict()
-                    event_json["commandId"] = hex(event.commandId)
-                    if event.name:
-                        event_json["name"] = event.name
-                    event_json["length"] = event.length
-                    event_json["bytes"] = " ".join("{:02x}".format(byte) for byte in event.bytes)
-                    if len(event.fields) > 0:
-                        event_json["fields"] = event.fields
+            file_json["nodes"].append(node_json)
+        return file_json
 
-                    subaction_json["events"].append(event_json)
+def main():
+    parser = argparse.ArgumentParser(description='Dump Melee .dat files to JSON')
+    parser.add_argument('datfile', help='The .dat file')
+    parser.add_argument("-a", "--animfile", default=None)
+    parser.add_argument("--dumpanims", default=False, action="store_true")
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
 
-                subactions_json.append(subaction_json)
-            node_json["data"] = {
-                "attributes": attributes_json,
-                "subactions": subactions_json
-            }
-        elif isinstance(node.data, FigaTree):
-            node_json["data"] = {
-                "numFrames": node.data.header.numFrames,
-                "boneTableOffset": node.data.header.boneTableOffset,
-                "animDataOffset": node.data.header.animDataOffset,
-            }
+    with open(args.datfile, "rb") as f:
+        fileData = f.read()
 
-        file_json["nodes"].append(node_json)
+    if args.animfile:
+        ajFilePath = args.animfile
+    else:
+        ajFilePath = os.path.splitext(args.datfile)[0] + "AJ.dat"
 
-    with open(sys.argv[2], "w") as f:
-        json.dump(file_json, f, indent=4)
+    if os.path.isfile(ajFilePath):
+        with open(ajFilePath, "rb") as f:
+            animFileData = f.read()
+    else:
+        print("Pl**AJ.dat file not found in '{}'".format(ajFilePath))
+        print("You can pass --animfile to pass the path to the AJ file directly")
+        animFileData = None
+
+    file = DatFile(fileData, animFileData)
+
+    # Dump Anims
+    if args.dumpanims:
+        assert animFileData
+        assert file.rootNodes[0].name.startswith(b"ftData")
+        os.makedirs("animationFiles", exist_ok=True)
+        for i, subact in enumerate(file.rootNodes[0].data.subactions):
+            name = str(i)
+            if len(subact.name) > 0:
+                name += " - " + subact.shortName.decode("utf-8")
+            with open("animationFiles/{}.dat".format(name), "wb") as f:
+                f.write(animFileData[subact.animationOffset:subact.animationOffset+subact.animationSize])
+
+    # Save to JSON
+    if args.out:
+        outPath = args.out
+    else:
+        outPath = os.path.splitext(args.datfile)[0] + ".json"
+    print("Saving to {}..".format(outPath))
+
+    with open(outPath, "w") as f:
+        json.dump(file.toJsonDict(), f, indent=4)
 
 if __name__ == "__main__":
     main()

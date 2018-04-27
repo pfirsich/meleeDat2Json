@@ -39,6 +39,7 @@ def postProcessHitboxEvent(fields):
 # mostly from here: https://github.com/Adjective-Object/melee_subaction_unpacker/blob/1489f016240440d76c2a0e6bf94dfc71ea816c5d/melee.langdef
 # some info from here too: http://opensa.dantarion.com/wiki/Events_(Melee)
 # and a lot from mer in the Melee Workshop Discord
+# TODO: https://smashboards.com/threads/new-melee-syntax-school-you-can-write-character-commands-now.402587/
 eventTypes = {
     0x00: EventType(0x04, "exit"),
 
@@ -134,6 +135,8 @@ eventTypes = {
 
     0xB0: EventType(0x04, "set_flag_0x221E_20", ("p25b1", ["flag"])),
     0xB4: EventType(0x04), # melee_subaction_unpacker says 0x0C bytes
+
+    #https://smashboards.com/threads/changing-color-effects-in-melee.313177/page-2#post-14490878
     0xB8: EventType(0x04, "bodyaura", ("u8u18", ("aura_id", "duration"))), # melee_subaction_unpacker says length 0x08
     0xBC: EventType(0x04, "remove_color_overlay"),
 
@@ -145,6 +148,7 @@ eventTypes = {
     0xD8: EventType(0x0C, "footstep_sfx_and_gfx"),
     0xDC: EventType(0x0C, "landing_sfx_and_gfx"),
 
+    # https://smashboards.com/threads/changing-color-effects-in-melee.313177/#post-13616960
     0xE0: EventType(0x08, "start_smash_charge", ("p2u8u16u8p24", ["charge_frames", "charge_rate", "visual_effect"])),
     0xE8: EventType(0x10, "wind_effect"),
 

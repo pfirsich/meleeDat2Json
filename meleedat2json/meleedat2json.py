@@ -204,6 +204,7 @@ class DatFile(object):
                         subaction_json["animationFile"] = len(file_json["animationFiles"])
                         file_json["animationFiles"].append(subaction.animation.toJsonDict())
 
+                    subaction_json["eventsOffset"] = subaction.eventsOffset
                     subaction_json["events"] = []
                     for event in subaction.events:
                         event_json = odict()

@@ -15,28 +15,6 @@ import time
 from .events import parseEvents
 from .attributes import attributesList
 
-class FileHeader(object):
-    def __init__(self, header):
-        values = struct.unpack('>8I', header[:0x20])
-        self.fileSize = values[0]
-        self.dataBlockSize = values[1]
-        self.relocationTableCount = values[2]
-        self.rootCount = values[3]
-        self.rootCount2 = values[4]
-        self.unknown1 = values[5]
-        self.unknown2 = values[6]
-        self.unknown3 = values[7]
-
-class FtDataHeader(object):
-    def __init__(self, data):
-        values = struct.unpack(">6I", data[:24])
-        self.attributesOffset = values[0]
-        self.attributesEnd = values[1]
-        self.unknown1 = values[2]
-        self.subactionsOffset = values[3]
-        self.unknown2 = values[4]
-        self.subactionsEnd = values[5]
-
 def figatreeShortname(name):
     m = re.match(b".*ACTION_(.*?)_figatree", name)
     if m:
@@ -45,8 +23,8 @@ def figatreeShortname(name):
         return name
 
 class FtDataSubaction(object):
-    def __init__(self, data, datFile):
-        values = struct.unpack(">4IHHI", data)
+    def __init__(self, datFile, offset):
+        values = struct.unpack_from(">4IHHI", datFile.data, offset)
         self.nameOffset = values[0]
         self.animationOffset = values[1] # Offset to the animation .dat in PlxxAJ
         self.animationSize = values[2] # Length of that animation .dat
@@ -66,15 +44,23 @@ class FtDataSubaction(object):
             self.animation = None
 
 class FtData(object):
-    def __init__(self, data, datFile):
-        self.header = FtDataHeader(data)
+    def __init__(self, datFile, offset):
+        # header
+        values = struct.unpack_from(">6I", datFile.data, offset)
+        self.attributesOffset = values[0]
+        self.attributesEnd = values[1]
+        self.unknown1 = values[2]
+        self.subactionsOffset = values[3]
+        self.unknown2 = values[4]
+        self.subactionsEnd = values[5]
 
         # load attributes
-        self.attributeData = datFile.data[self.header.attributesOffset:self.header.attributesEnd]
+        attributeDataSize = self.attributesEnd - self.attributesOffset
         fmt = ">"
         for attr in attributesList:
             fmt += attr[0]
-        values = struct.unpack(fmt, self.attributeData)
+        assert attributeDataSize == struct.calcsize(fmt)
+        values = struct.unpack_from(fmt, datFile.data, self.attributesOffset)
 
         self.attributes = odict()
         for i, attr in enumerate(attributesList):
@@ -83,15 +69,14 @@ class FtData(object):
                 self.attributes[name] = values[i]
 
         # load subactions
-        subactionDataSize = self.header.subactionsEnd - self.header.subactionsOffset
+        subactionDataSize = self.subactionsEnd - self.subactionsOffset
         subactionCount = subactionDataSize // 24
         assert subactionCount * 24 == subactionDataSize
         self.subactions = []
         self.subroutines = {}
         for i in range(subactionCount):
-            start = self.header.subactionsOffset + i * 24
-            subactionHeaderData = datFile.dataSlice(start, 24)
-            subaction = FtDataSubaction(subactionHeaderData, datFile)
+            start = self.subactionsOffset + i * 24
+            subaction = FtDataSubaction(datFile, start)
             self.subactions.append(subaction)
 
             # we might end up parsing some evnets multiple times here, be we don't care
@@ -100,24 +85,22 @@ class FtData(object):
                     offset = int(event.fields["location"])
                     self.subroutines[offset] = parseEvents(datFile.data, offset)
 
-class FigaTreeHeader(object):
-    def __init__(self, data):
-        values = struct.unpack(">2If2I", data)
+# https://smashboards.com/threads/melee-dat-format.292603/page-6#post-20386112
+# https://smashboards.com/threads/melee-animation-model-workshop.433432/
+class FigaTree(object):
+    def __init__(self, datFile, offset):
+        # header
+        values = struct.unpack_from(">2If2I", datFile.data, offset)
         assert values[0] == 1
         assert values[1] == 0
         self.numFrames = values[2]
         self.boneTableOffset = values[3]
         self.animDataOffset = values[4]
 
-# https://smashboards.com/threads/melee-dat-format.292603/page-6#post-20386112
-# https://smashboards.com/threads/melee-animation-model-workshop.433432/
-class FigaTree(object):
-    def __init__(self, data, datFile):
-        self.header = FigaTreeHeader(data)
-
 class RootNode(object):
-    def __init__(self, data, datFile):
-        values = struct.unpack(">2I", data[:0x08])
+    def __init__(self, datFile, offset):
+        # offset is a offset in fileData!
+        values = struct.unpack_from(">2I", datFile.fileData, offset)
         self.rootOffset = values[0]
         self.stringTableOffset = values[1]
         self.name = datFile.getString(self.stringTableOffset)
@@ -125,52 +108,58 @@ class RootNode(object):
 
         if self.name.startswith(b"ftData"):
             # character data
-            self.data = FtData(datFile.dataSlice(self.rootOffset, 0x60), datFile)
+            self.data = FtData(datFile, self.rootOffset)
         elif self.name.endswith(b"_figatree"):
             # animation file
-            self.data = FigaTree(datFile.dataSlice(self.rootOffset, 0x14), datFile)
+            self.data = FigaTree(datFile, self.rootOffset)
             self.shortName = figatreeShortname(self.name)
         else:
             print("Warning! Unkown/Unimplemented node type:", self.name)
 
 class DatFile(object):
     def __init__(self, fileData, animFileData=None):
-        self.header = FileHeader(fileData[:0x20])
+        # header
+        values = struct.unpack_from('>8I', fileData, 0)
+        self.fileSize = values[0]
+        self.dataBlockSize = values[1]
+        self.relocationTableCount = values[2]
+        self.rootCount = values[3]
+        self.rootCount2 = values[4]
+        self.unknown1 = values[5]
+        self.unknown2 = values[6]
+        self.unknown3 = values[7]
+
         self.dataBlockOffset = 0x20
-        self.relocationTableOffset = self.dataBlockOffset + self.header.dataBlockSize
-        self.relocationTableSize = self.header.relocationTableCount * 4 # each entry is a uint32
+        self.relocationTableOffset = self.dataBlockOffset + self.dataBlockSize
+        self.relocationTableSize = self.relocationTableCount * 4 # each entry is a uint32
         self.rootNodesOffset = self.relocationTableOffset + self.relocationTableSize
-        self.rootNodesSize = (self.header.rootCount + self.header.rootCount2) * 8 # each entry is 2*uint32
+        self.rootNodesSize = (self.rootCount + self.rootCount2) * 8 # each entry is 2*uint32
         self.stringTableOffset = self.rootNodesOffset + self.rootNodesSize
 
         self.fileData = fileData
-        self.data = fileData[self.dataBlockOffset:self.dataBlockOffset + self.header.dataBlockSize]
+        self.data = fileData[self.dataBlockOffset:self.dataBlockOffset + self.dataBlockSize]
         self.animFileData = animFileData
 
         # load relocation table
-        self.relocationTableData = fileData[self.relocationTableOffset:self.relocationTableOffset + self.relocationTableSize]
-        self.relocationTable = list(struct.unpack(">{}I".format(self.header.relocationTableCount), self.relocationTableData))
+        self.relocationTable = list(struct.unpack_from(
+            ">{}I".format(self.relocationTableCount),
+            fileData, self.relocationTableOffset))
 
         # load root nodes
-        self.rootNodesData = fileData[self.rootNodesOffset:self.rootNodesOffset + self.rootNodesSize]
-
         self.rootNodes = []
-        for i in range(self.header.rootCount + self.header.rootCount2):
-            start = 0x08 * i
-            node = RootNode(self.rootNodesData[start:start+0x08], self)
+        for i in range(self.rootCount + self.rootCount2):
+            # rootNodesOffset is a offset in fileData!
+            node = RootNode(self, self.rootNodesOffset + 0x08 * i)
             self.rootNodes.append(node)
 
     def getString(self, offset):
-        return self.fileData[self.stringTableOffset + offset:].split(b'\0', 1)[0]
+        start = self.stringTableOffset + offset
+        end = self.fileData.index(b'\0', start)
+        return self.fileData[start:end]
 
     def getDataString(self, offset):
-        return self.data[offset:].split(b'\0', 1)[0]
-
-    def dataSlice(self, offset, length=None):
-        if length == None:
-            return self.data[offset:]
-        else:
-            return self.data[offset:offset+length]
+        end = self.data.index(b'\0', offset)
+        return self.data[offset:end]
 
     def toJsonDict(self):
         file_json = odict()
@@ -218,9 +207,9 @@ class DatFile(object):
                 node_json["shortName"] = node.shortName.decode("utf-8")
                 node_json.move_to_end("shortName", last=False)
                 node_json["data"] = odict([
-                    ("numFrames", node.data.header.numFrames),
-                    ("boneTableOffset", node.data.header.boneTableOffset),
-                    ("animDataOffset", node.data.header.animDataOffset),
+                    ("numFrames", node.data.numFrames),
+                    ("boneTableOffset", node.data.boneTableOffset),
+                    ("animDataOffset", node.data.animDataOffset),
                 ])
 
             file_json["nodes"].append(node_json)

@@ -217,11 +217,11 @@ class DatFile(object):
             elif isinstance(node.data, FigaTree):
                 node_json["shortName"] = node.shortName.decode("utf-8")
                 node_json.move_to_end("shortName", last=False)
-                node_json["data"] = {
-                    "numFrames": node.data.header.numFrames,
-                    "boneTableOffset": node.data.header.boneTableOffset,
-                    "animDataOffset": node.data.header.animDataOffset,
-                }
+                node_json["data"] = odict([
+                    ("numFrames", node.data.header.numFrames),
+                    ("boneTableOffset", node.data.header.boneTableOffset),
+                    ("animDataOffset", node.data.header.animDataOffset),
+                ])
 
             file_json["nodes"].append(node_json)
         return file_json

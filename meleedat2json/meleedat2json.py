@@ -96,8 +96,9 @@ class FtData(object):
                             if subEvent.name == "return":
                                 firstReturn = i
                                 break
-                        if firstReturn:
-                            subroutine = subroutine[:firstReturn+1] # +1 to include the return
+
+                        assert firstReturn, "'goto {}' from {} did not end in return!".format(offset, subaction.name)
+                        subroutine = subroutine[:firstReturn+1] # +1 to include the return
 
                     self.subroutines[offset] = subroutine
 

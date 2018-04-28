@@ -272,7 +272,8 @@ def main():
     with open(outPath, "w") as f:
         json.dump(file.toJsonDict(), f, indent=4)
 
-    print("Duration: {}s".format(time.time() - startTime))
+    if args.time:
+        print("Duration: {}s".format(time.time() - startTime))
 
 if __name__ == "__main__":
     main()

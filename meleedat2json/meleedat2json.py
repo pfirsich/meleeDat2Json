@@ -26,10 +26,6 @@ class FileHeader(object):
         self.unknown2 = values[6]
         self.unknown3 = values[7]
 
-    def __str__(self):
-        return "FileHeader<fileSize: {}, dataBlockSize: {}, relocationTableCount: {}, rootCount: {}, rootCount2: {}, unknown1: {}, unknown2: {}, unknown3: {}>".format(
-            self.fileSize, self.dataBlockSize, self.relocationTableCount, self.rootCount, self.rootCount2, self.unknown1, self.unknown2, self.unknown3)
-
 class FtDataHeader(object):
     def __init__(self, data):
         values = struct.unpack(">6I", data[:24])
@@ -39,10 +35,6 @@ class FtDataHeader(object):
         self.subactionsOffset = values[3]
         self.unknown2 = values[4]
         self.subactionsEnd = values[5]
-
-    def __str__(self):
-        return "FtDataHeader<attributesOffset: {}, attributesEnd: {}, subactionsOffset: {}, subactionsEnd: {}, unknown1: {}, unknown2: {}>".format(
-            self.attributesOffset, self.attributesEnd, self.subactionsOffset, self.subactionsEnd, self.unknown1, self.unknown2)
 
 def figatreeShortname(name):
     m = re.match(b".*ACTION_(.*?)_figatree", name)
@@ -65,17 +57,12 @@ class FtDataSubaction(object):
         self.name = datFile.getDataString(self.nameOffset)
         self.shortName = figatreeShortname(self.name)
 
-        self.eventsData = datFile.dataSlice(self.eventsOffset)
-        self.events = parseEvents(self.eventsData)
+        self.events = parseEvents(datFile.data, self.eventsOffset)
 
         if datFile.animFileData and self.animationSize > 0:
             self.animation = DatFile(datFile.animFileData[self.animationOffset:self.animationOffset+self.animationSize])
         else:
             self.animation = None
-
-    def __str__(self):
-        return "Subaction<nameOffset: {}, eventsOffset: {}, name: {}>".format(
-            self.nameOffset, self.eventsOffset, self.name)
 
 class FtData(object):
     def __init__(self, data, datFile):
@@ -95,15 +82,22 @@ class FtData(object):
                 self.attributes[name] = values[i]
 
         # load subactions
-        self.subactionData = datFile.data[self.header.subactionsOffset:self.header.subactionsEnd]
-        subactionCount = len(self.subactionData) // 24
-        assert subactionCount * 24 == len(self.subactionData)
+        subactionDataSize = self.header.subactionsEnd - self.header.subactionsOffset
+        subactionCount = subactionDataSize // 24
+        assert subactionCount * 24 == subactionDataSize
         self.subactions = []
+        self.subroutines = {}
         for i in range(subactionCount):
-            start = i * 24
-            subactionHeaderData = self.subactionData[start:start+24]
+            start = self.header.subactionsOffset + i * 24
+            subactionHeaderData = datFile.dataSlice(start, 24)
             subaction = FtDataSubaction(subactionHeaderData, datFile)
             self.subactions.append(subaction)
+
+            # we might end up parsing some evnets multiple times here, be we don't care
+            for event in subaction.events:
+                if event.name == "subroutine":
+                    offset = int(event.fields["location"])
+                    self.subroutines[offset] = parseEvents(datFile.data, offset)
 
 class FigaTreeHeader(object):
     def __init__(self, data):
@@ -138,9 +132,6 @@ class RootNode(object):
         else:
             print("Warning! Unkown/Unimplemented node type:", self.name)
 
-    def __str__(self):
-        return "RootNode<rootOffset: {}, stringTableOffset: {}, name: {}>".format(self.rootOffset, self.stringTableOffset, self.name)
-
 class DatFile(object):
     def __init__(self, fileData, animFileData=None):
         self.header = FileHeader(fileData[:0x20])
@@ -150,8 +141,8 @@ class DatFile(object):
         self.rootNodesOffset = self.relocationTableOffset + self.relocationTableSize
         self.rootNodesSize = (self.header.rootCount + self.header.rootCount2) * 8 # each entry is 2*uint32
         self.stringTableOffset = self.rootNodesOffset + self.rootNodesSize
-        self.stringTableData = fileData[self.stringTableOffset:]
 
+        self.fileData = fileData
         self.data = fileData[self.dataBlockOffset:self.dataBlockOffset + self.header.dataBlockSize]
         self.animFileData = animFileData
 
@@ -169,7 +160,7 @@ class DatFile(object):
             self.rootNodes.append(node)
 
     def getString(self, offset):
-        return self.stringTableData[offset:].split(b'\0', 1)[0]
+        return self.fileData[self.stringTableOffset + offset:].split(b'\0', 1)[0]
 
     def getDataString(self, offset):
         return self.data[offset:].split(b'\0', 1)[0]
@@ -207,21 +198,20 @@ class DatFile(object):
                     subaction_json["eventsOffset"] = subaction.eventsOffset
                     subaction_json["events"] = []
                     for event in subaction.events:
-                        event_json = odict()
-                        event_json["commandId"] = hex(event.commandId)
-                        if event.name:
-                            event_json["name"] = event.name
-                        event_json["length"] = event.length
-                        event_json["bytes"] = " ".join("{:02x}".format(byte) for byte in event.bytes)
-                        if len(event.fields) > 0:
-                            event_json["fields"] = event.fields
-
-                        subaction_json["events"].append(event_json)
+                        subaction_json["events"].append(event.toJsonDict())
 
                     subactions_json.append(subaction_json)
+
+                subroutines_json = odict()
+                for offset, subroutine in node.data.subroutines.items():
+                    subroutines_json[offset] = []
+                    for event in subroutine:
+                        subroutines_json[offset].append(event.toJsonDict())
+
                 node_json["data"] = odict([
                     ("attributes", node.data.attributes),
-                    ("subactions", subactions_json)
+                    ("subactions", subactions_json),
+                    ("subroutines", subroutines_json),
                 ])
             elif isinstance(node.data, FigaTree):
                 node_json["shortName"] = node.shortName.decode("utf-8")

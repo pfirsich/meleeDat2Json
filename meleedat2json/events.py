@@ -156,13 +156,13 @@ eventTypes = {
 }
 
 class Event(object):
-    def __init__(self, eventStr):
-        self.commandId = eventStr[0] & 0xFC
+    def __init__(self, eventStr, offset):
+        self.commandId = eventStr[offset] & 0xFC
         eventType = eventTypes.get(self.commandId, eventTypes["default"])
         self.length = eventType.length
         self.name = eventType.name
         self.fields = odict()
-        self.bytes = eventStr[:self.length]
+        self.bytes = eventStr[offset:offset+self.length]
 
         if eventType.fields:
             if len(eventType.fields) > 2:
@@ -171,7 +171,7 @@ class Event(object):
                 fieldFormat, fieldNames = eventType.fields
                 postProcess = None
             # p6 to skip command id
-            values = bitstruct.unpack("p6" + fieldFormat.replace(" ", ""), eventStr)
+            values = bitstruct.unpack("p6" + fieldFormat.replace(" ", ""), self.bytes)
             assert len(values) == len(fieldNames), "format: {}, fields: {}, values: {}".format("p6" + fieldFormat, fieldNames, values)
             for i in range(len(fieldNames)):
                 self.fields[fieldNames[i]] = values[i]
@@ -179,20 +179,23 @@ class Event(object):
             if postProcess:
                 postProcess(self.fields)
 
-    def __str__(self):
+    def toJsonDict(self):
+        event_json = odict()
+        event_json["commandId"] = hex(self.commandId)
         if self.name:
-            return "Event<name: {}, fields: {}>".format(self.name, self.fields)
-        else:
-            return "Event<id: {}, length: {}, name: {}, bytes: {}>".format(
-                self.commandId, self.length, self.name, self.bytes.hex().upper())
+            event_json["name"] = self.name
+        event_json["length"] = self.length
+        event_json["bytes"] = " ".join("{:02x}".format(byte) for byte in self.bytes)
+        if len(self.fields) > 0:
+            event_json["fields"] = self.fields
+        return event_json
 
-def parseEvents(eventStr):
-    i = 0
+def parseEvents(eventStr, offset):
     events = []
-    while i < len(eventStr):
-        event = Event(eventStr[i:])
+    while offset < len(eventStr):
+        event = Event(eventStr, offset)
         events.append(event)
-        i += event.length
+        offset += event.length
         if event.commandId == 0:
             break
     return events

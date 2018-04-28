@@ -61,7 +61,7 @@ class FtData(object):
         fmt = ">"
         for attr in attributesList:
             fmt += attr[0]
-        assert attributeDataSize == struct.calcsize(fmt)
+        assert attributeDataSize >= struct.calcsize(fmt) # usually ==, but > for Kirby and Peach
         values = struct.unpack_from(fmt, datFile.data, self.attributesOffset)
 
         self.attributes = odict()
@@ -93,8 +93,10 @@ class FigaTree(object):
     def __init__(self, datFile, offset):
         # header
         values = struct.unpack_from(">2If2I", datFile.data, offset)
-        assert values[0] == 1
-        assert values[1] == 0
+        # 0 for Mario's "Appeal" and Yoshi's "AttackAir*" and "LandingLag*", 1 otherwise
+        self.unknown1 = values[0]
+        # seems to be always 0
+        self.unknown2 = values[1]
         self.numFrames = values[2]
         self.boneTableOffset = values[3]
         self.animDataOffset = values[4]

@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import struct
+import time
 
 # Sources:
 # https://smashboards.com/threads/melee-dat-format.292603/
@@ -228,10 +229,14 @@ class DatFile(object):
 def main():
     parser = argparse.ArgumentParser(description='Dump Melee .dat files to JSON')
     parser.add_argument('datfile', help='The .dat file')
-    parser.add_argument("-a", "--animfile", default=None)
-    parser.add_argument("--dumpanims", default=False, action="store_true")
-    parser.add_argument("--out", default=None)
+    parser.add_argument("-a", "--animfile", default=None, help="Path to the corresponding animation file. If nothing is given an Pl**AJ.dat file will be looked for next to the PJ**.dat (the input)")
+    parser.add_argument("--dumpanims", default=False, action="store_true", help="Dumps animation files from the Pl**AJ.dat to separate files (per subaction)")
+    parser.add_argument("--animpath", default="animationFiles", help="Directory to where the animations from Pl**AJ.dat should be dumped to.")
+    parser.add_argument("--out", default=None, help="Path to output JSON file.")
+    parser.add_argument("--time", default=False, action="store_true", help="Times how long the dumping took. Mainly for optimization.")
     args = parser.parse_args()
+
+    startTime = time.time()
 
     with open(args.datfile, "rb") as f:
         fileData = f.read()
@@ -255,12 +260,12 @@ def main():
     if args.dumpanims:
         assert animFileData
         assert file.rootNodes[0].name.startswith(b"ftData")
-        os.makedirs("animationFiles", exist_ok=True)
+        os.makedirs(args.animpath, exist_ok=True)
         for i, subact in enumerate(file.rootNodes[0].data.subactions):
             name = str(i)
             if len(subact.name) > 0:
                 name += " - " + subact.shortName.decode("utf-8")
-            with open("animationFiles/{}.dat".format(name), "wb") as f:
+            with open(os.path.join(args.animpath, "{}.dat".format(name)), "wb") as f:
                 f.write(animFileData[subact.animationOffset:subact.animationOffset+subact.animationSize])
 
     # Save to JSON
@@ -272,6 +277,8 @@ def main():
 
     with open(outPath, "w") as f:
         json.dump(file.toJsonDict(), f, indent=4)
+
+    print("Duration: {}s".format(time.time() - startTime))
 
 if __name__ == "__main__":
     main()

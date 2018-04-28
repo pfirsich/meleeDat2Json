@@ -85,7 +85,21 @@ class FtData(object):
             for event in subaction.events:
                 if event.name == "subroutine" or event.name == "goto":
                     offset = int(event.fields["location"])
-                    self.subroutines[offset] = parseEvents(datFile.data, offset)
+                    subroutine = parseEvents(datFile.data, offset)
+
+                    # truncate the goto subroutine at the first "return", otherwise we might have some
+                    # subroutine-parts in the JSON multiple times
+
+                    if event.name == "goto":
+                        firstReturn = None
+                        for i, subEvent in enumerate(subroutine):
+                            if subEvent.name == "return":
+                                firstReturn = i
+                                break
+                        if firstReturn:
+                            subroutine = subroutine[:firstReturn+1] # +1 to include the return
+
+                    self.subroutines[offset] = subroutine
 
 # https://smashboards.com/threads/melee-dat-format.292603/page-6#post-20386112
 # https://smashboards.com/threads/melee-animation-model-workshop.433432/

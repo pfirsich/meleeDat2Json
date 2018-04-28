@@ -95,7 +95,7 @@ class FtData(object):
 
             # we might end up parsing some evnets multiple times here, be we don't care
             for event in subaction.events:
-                if event.name == "subroutine":
+                if event.name == "subroutine" or event.name == "goto":
                     offset = int(event.fields["location"])
                     self.subroutines[offset] = parseEvents(datFile.data, offset)
 

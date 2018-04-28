@@ -39,7 +39,9 @@ class FtDataSubaction(object):
         self.events = parseEvents(datFile.data, self.eventsOffset)
 
         if datFile.animFileData and self.animationSize > 0:
-            self.animation = DatFile(datFile.animFileData[self.animationOffset:self.animationOffset+self.animationSize])
+            # this is just for caching, because we might write exactly this buffer later
+            self.animationData = datFile.animFileData[self.animationOffset:self.animationOffset+self.animationSize]
+            self.animation = DatFile(self.animationData)
         else:
             self.animation = None
 
@@ -255,7 +257,8 @@ def main():
             if len(subact.name) > 0:
                 name += " - " + subact.shortName.decode("utf-8")
             with open(os.path.join(args.animpath, "{}.dat".format(name)), "wb") as f:
-                f.write(animFileData[subact.animationOffset:subact.animationOffset+subact.animationSize])
+                if subact.animationSize > 0:
+                    f.write(subact.animationData)
 
     # Save to JSON
     if args.out:

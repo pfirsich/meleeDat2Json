@@ -237,10 +237,10 @@ class DatFile(object):
 def main():
     parser = argparse.ArgumentParser(description='Dump Melee .dat files to JSON')
     parser.add_argument('datfile', help='The .dat file')
+    parser.add_argument("outfile", help="Path to output JSON file.")
     parser.add_argument("-a", "--animfile", default=None, help="Path to the corresponding animation file. If nothing is given an Pl**AJ.dat file will be looked for next to the PJ**.dat (the input)")
     parser.add_argument("--dumpanims", default=False, action="store_true", help="Dumps animation files from the Pl**AJ.dat to separate files (per subaction)")
     parser.add_argument("--animpath", default="animationFiles", help="Directory to where the animations from Pl**AJ.dat should be dumped to.")
-    parser.add_argument("--out", default=None, help="Path to output JSON file.")
     parser.add_argument("--time", default=False, action="store_true", help="Times how long the dumping took. Mainly for optimization.")
     args = parser.parse_args()
 
@@ -278,13 +278,8 @@ def main():
                     f.write(subact.animationData)
 
     # Save to JSON
-    if args.out:
-        outPath = args.out
-    else:
-        outPath = os.path.splitext(args.datfile)[0] + ".json"
-    print("Saving to {}..".format(outPath))
-
-    with open(outPath, "w") as f:
+    print("Saving to {}..".format(args.outfile))
+    with open(args.outfile, "w") as f:
         json.dump(file.toJsonDict(), f, indent=4)
 
     if args.time:

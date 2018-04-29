@@ -17,22 +17,22 @@ def postProcessHitboxEvent(fields):
 
     elementMap = {
         0x00: "normal",
-        0x04: "fire",
-        0x08: "electric",
-        0x0C: "slash",
-        0x10: "coin",
-        0x14: "ice",
-        0x18: "sleep",
-        0x1C: "sleep",
-        0x20: "grounded",
-        0x24: "grounded",
-        0x28: "cape",
-        0x2C: "empty", # gray hitbox that doesn't hit
-        0x30: "disabled",
-        0x34: "darkness",
-        0x38: "screw_attack",
-        0x3C: "poison/flower",
-        0x40: "nothing", # no graphic on hit
+        0x01: "fire",
+        0x02: "electric",
+        0x03: "slash",
+        0x04: "coin",
+        0x05: "ice",
+        0x06: "sleep_103_frames",
+        0x07: "sleep_412_frames",
+        0x08: "grab", # https://gist.github.com/pfirsich/c5b4c467405ba88332cf1e243f4a2e4b
+        0x09: "grounded_97_frames",
+        0x0A: "cape",
+        0x0B: "empty", # gray hitbox that doesn't hit
+        0x0C: "disabled",
+        0x0D: "darkness",
+        0x0E: "screw_attack",
+        0x0F: "poison/flower",
+        0x10: "nothing", # no graphic on hit
     }
     fields["element"] = elementMap.get(fields["element"], fields["element"])
 

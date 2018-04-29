@@ -61,7 +61,9 @@ eventTypes = {
     # https://smashboards.com/threads/melee-hacks-and-you-new-hackers-start-here-in-the-op.247119/page-48#post-10769744
     0x2C: EventType(0x14, "hitbox", ("u3p5u7p2u9 u16s16s16s16 u9u9u9p3u2u9 u5p1u7u8b1b1", [
         "id",
+        # unknown (5 bits)
         "bone", # zero is character root position
+        # unknown (2 bits)
         "damage",
 
         "size",
@@ -70,11 +72,13 @@ eventTypes = {
         "angle",
         "kb_growth",
         "weight_dep_kb",
+        # unknown (3 bits)
         # https://smashboards.com/threads/official-ask-anyone-frame-things-thread.313889/page-16#post-17742200
         "hitbox_interaction",
         "base_kb",
 
         "element",
+        # unknown (1 bit)
         "shield_damage",
         "sfx",
         "hit_grounded",

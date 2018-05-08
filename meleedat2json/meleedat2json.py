@@ -64,11 +64,9 @@ class FtData(object):
         assert attributeDataSize >= struct.calcsize(fmt) # usually ==, but > for Kirby and Peach
         values = struct.unpack_from(fmt, datFile.data, self.attributesOffset)
 
-        self.attributes = odict()
+        self.attributes = []
         for i, attr in enumerate(attributesList):
-            name = attr[1]
-            if name != "?":
-                self.attributes[name] = values[i]
+            self.attributes.append((attr[1], values[i]))
 
         # load subactions
         subactionDataSize = self.subactionsEnd - self.subactionsOffset
@@ -189,6 +187,13 @@ class DatFile(object):
                 ("rootOffset", node.rootOffset)
             ])
             if isinstance(node.data, FtData):
+                attributes_json = []
+                for attr in node.data.attributes:
+                    attributes_json.append(odict([
+                        ("name", attr[0]),
+                        ("value", attr[1]),
+                    ]))
+
                 subactions_json = []
                 for i, subaction in enumerate(node.data.subactions):
                     subaction_json = odict([
@@ -218,7 +223,7 @@ class DatFile(object):
                         subroutines_json[offset].append(event.toJsonDict())
 
                 node_json["data"] = odict([
-                    ("attributes", node.data.attributes),
+                    ("attributes", attributes_json),
                     ("subactions", subactions_json),
                     ("subroutines", subroutines_json),
                 ])

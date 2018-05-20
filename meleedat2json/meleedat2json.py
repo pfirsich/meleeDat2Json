@@ -223,7 +223,9 @@ class DatFile(object):
                         subroutines_json[offset].append(event.toJsonDict())
 
                 node_json["data"] = odict([
+                    ("attributesOffset", node.data.attributesOffset),
                     ("attributes", attributes_json),
+                    ("subactionsOffset", node.data.subactionsOffset),
                     ("subactions", subactions_json),
                     ("subroutines", subroutines_json),
                 ])
@@ -285,7 +287,10 @@ def main():
     # Save to JSON
     print("Saving to {}..".format(args.outfile))
     with open(args.outfile, "w") as f:
-        json.dump(file.toJsonDict(), f, indent=4)
+        dictData = file.toJsonDict()
+        dictData["sourceFile"] = os.path.basename(args.datfile)
+        dictData.move_to_end("sourceFile", last=False)
+        json.dump(dictData, f, indent=4)
 
     if args.time:
         print("Duration: {}s".format(time.time() - startTime))

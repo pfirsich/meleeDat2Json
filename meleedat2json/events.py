@@ -101,7 +101,7 @@ eventTypes = {
     0x58: EventType(0x04, "setFlag_0x2210_20"),
     0x5C: EventType(0x04, "allowIasa"),
 
-    0x60: EventType(0x04, "shootitem1/projectile flag?"),
+    0x60: EventType(0x04, "shootitem"),
     0x64: EventType(0x04, "related to ground/air state?"),
     0x68: EventType(0x04, "bodyCollisionState", ("p24u2", ["state"])), # 0 = normal, 1 = invulnerable, 2 = intangible
     0x6C: EventType(0x04, "bodyCollisionStatus"),
